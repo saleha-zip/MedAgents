@@ -2,6 +2,7 @@ from data_utils import MyDataset
 from api_utils import api_handler
 from string import punctuation
 import argparse
+import os
 import tqdm
 import json
 from utils import *
@@ -23,10 +24,10 @@ if __name__ == '__main__':
     print(args)
 
     ### get handler
-    if args.model_name in ['instructgpt', 'newinstructgpt', 'chatgpt', 'gpt4']: # select the model
-        handler = api_handler(args.model_name)
-    else:
-        raise ValueError
+    # `--model_name` is passed straight through to the API as the model id
+    # (e.g. a Groq catalogue id such as `llama-3.3-70b-versatile`). Legacy
+    # aliases ('chatgpt', 'gpt4', ...) are still mapped inside api_handler.
+    handler = api_handler(args.model_name)
 
     ### get dataobj
     dataobj = MyDataset('test', args, traindata_obj=None)
@@ -35,8 +36,10 @@ if __name__ == '__main__':
     end_pos = len(dataobj) if args.end_pos == -1 else args.end_pos
     test_range = range(args.start_pos, end_pos)  # closed interval
 
-    ### set output_file_name
-    exact_output_file = f"{args.output_files_folder}/{args.model_name}-{args.method}"
+    ### set output_file_name (ensure the folder exists; the code only appends)
+    os.makedirs(args.output_files_folder, exist_ok=True)
+    safe_model = args.model_name.replace('/', '_')
+    exact_output_file = f"{args.output_files_folder}/{safe_model}-{args.method}"
     #print(exact_output_file)
 
 

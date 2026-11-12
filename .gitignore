@@ -1,0 +1,15 @@
+# Secrets — never commit API keys
+.env
+.env.*
+
+# Local virtual environment
+.venv/
+venv/
+
+# Run outputs (results, usage logs)
+outputs/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
