@@ -62,14 +62,14 @@ def fully_decode(qid, realqid, question, options, gold_answer, handler, args, da
     else:
         # get question domains
         question_classifier, prompt_get_question_domain = get_question_domains_prompt(question)
-        raw_question_domain = handler.get_output_multiagent(user_input=prompt_get_question_domain, temperature=0, max_tokens=50, system_role=question_classifier)
+        raw_question_domain = handler.get_output_multiagent(user_input=prompt_get_question_domain, temperature=0, max_tokens=500, system_role=question_classifier)
         if raw_question_domain == "ERROR.":
             raw_question_domain  = "Medical Field: " + " | ".join(["General Medicine" for _ in range(NUM_QD)])
         question_domains = raw_question_domain.split(":")[-1].strip().split(" | ")
 
         # get option domains
         options_classifier, prompt_get_options_domain = get_options_domains_prompt(question, options)
-        raw_option_domain = handler.get_output_multiagent(user_input=prompt_get_options_domain, temperature=0, max_tokens=50, system_role=options_classifier)
+        raw_option_domain = handler.get_output_multiagent(user_input=prompt_get_options_domain, temperature=0, max_tokens=500, system_role=options_classifier)
         if raw_option_domain == "ERROR.":
             raw_option_domain  = "Medical Field: " + " | ".join(["General Medicine" for _ in range(NUM_OD)])
         options_domains = raw_option_domain.split(":")[-1].strip().split(" | ")
