@@ -19,6 +19,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--method', type=str, default='syn_verif', choices=['syn_verif', 'syn_only', 'anal_only', 'base_direct', 'base_cot'])
     parser.add_argument('--max_attempt_vote', type=int, default=3)
+    parser.add_argument('--legacy_voting', action='store_true', default=False,
+                        help='Restore original vote parsing: substring match (no word '
+                             'boundaries) and unparseable output coerced to "yes".')
     args = parser.parse_args()
 
     print(args)
@@ -66,3 +69,7 @@ if __name__ == '__main__':
         record = json.dumps(data_info)
         with open(exact_output_file, 'a') as f:
             f.write(record + '\n')
+
+    ### per-run voting summary (headline metric for the consensus stage)
+    if args.method == 'syn_verif':
+        print(vote_summary())

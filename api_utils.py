@@ -105,13 +105,27 @@ def _extract_usage(resp):
         return None, None, None
 
 
+def append_usage_record(record):
+    """Append one JSON record (an API call, a vote, ...) to USAGE_LOG. Best-effort;
+    never lets a logging failure break a run."""
+    try:
+        d = os.path.dirname(USAGE_LOG)
+        if d:
+            os.makedirs(d, exist_ok=True)
+        with open(USAGE_LOG, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except Exception as e:
+        print(f"[usage] WARNING: could not write usage log: {e}", file=sys.stderr)
+
+
 def _log_usage(model, prompt_tokens, completion_tokens, total_tokens, latency, status="ok"):
     print(
         f"[usage] model={model} prompt_tokens={prompt_tokens} "
         f"completion_tokens={completion_tokens} total_tokens={total_tokens} "
         f"latency={latency:.2f}s status={status}"
     )
-    rec = {
+    append_usage_record({
+        "event": "api_call",
         "ts": datetime.datetime.now().isoformat(timespec="seconds"),
         "model": model,
         "prompt_tokens": prompt_tokens,
@@ -119,15 +133,7 @@ def _log_usage(model, prompt_tokens, completion_tokens, total_tokens, latency, s
         "total_tokens": total_tokens,
         "latency_s": round(latency, 3),
         "status": status,
-    }
-    try:
-        d = os.path.dirname(USAGE_LOG)
-        if d:
-            os.makedirs(d, exist_ok=True)
-        with open(USAGE_LOG, "a") as f:
-            f.write(json.dumps(rec) + "\n")
-    except Exception as e:  # never let logging break a run
-        print(f"[usage] WARNING: could not write usage log: {e}", file=sys.stderr)
+    })
 
 
 # --------------------------------------------------------------------------- #

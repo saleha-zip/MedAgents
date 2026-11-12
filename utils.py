@@ -1,5 +1,48 @@
+import datetime
 from prompt_generator import *
 from data_utils import *
+from api_utils import append_usage_record
+
+
+# --------------------------------------------------------------------------- #
+# Per-run voting instrumentation (headline metric for syn_verif).
+# A fresh process per run starts these empty; no reset needed.
+# --------------------------------------------------------------------------- #
+_VOTE_PARSED = []       # parsed vote strings gathered this run
+_REVISION_ROUNDS = 0    # revision rounds actually triggered this run
+
+
+def log_vote(question_id, vote_round, domain, raw_vote, parsed_vote, legacy=False):
+    """Record one vote: to the in-memory run summary and to usage_log.jsonl."""
+    _VOTE_PARSED.append(parsed_vote)
+    append_usage_record({
+        "event": "vote",
+        "ts": datetime.datetime.now().isoformat(timespec="seconds"),
+        "question_id": question_id,
+        "round": vote_round,
+        "domain": domain,
+        "raw_vote": raw_vote,            # untruncated
+        "parsed_vote": parsed_vote,
+        "legacy": legacy,
+    })
+
+
+def note_revision_round():
+    global _REVISION_ROUNDS
+    _REVISION_ROUNDS += 1
+
+
+def vote_summary():
+    total = len(_VOTE_PARSED)
+    yes = _VOTE_PARSED.count("yes")
+    no = _VOTE_PARSED.count("no")
+    unp = _VOTE_PARSED.count("unparseable")
+    pct = lambda n: (100.0 * n / total) if total else 0.0
+    return (
+        f"Votes: {total} total | yes {yes} ({pct(yes):.1f}%) | "
+        f"no {no} ({pct(no):.1f}%) | unparseable {unp} ({pct(unp):.1f}%)\n"
+        f"Revision rounds triggered: {_REVISION_ROUNDS}"
+    )
 
 
 
@@ -82,15 +125,19 @@ def fully_decode(qid, realqid, question, options, gold_answer, handler, args, da
                     # hold a meeting for all domain experts to vote and gather advice if they do not agree
                     for domain in all_domains:
                         voter, cons_prompt = get_consensus_prompt(domain, syn_report)
-                        raw_domain_opi = handler.get_output_multiagent(user_input=cons_prompt, temperature=0, max_tokens=30, system_role=voter)
-                        domain_opinion = cleansing_voting(raw_domain_opi)   # "yes" / "no"
+                        raw_domain_opi = handler.get_output_multiagent(user_input=cons_prompt, temperature=0, max_tokens=200, system_role=voter)
+                        domain_opinion = cleansing_voting(raw_domain_opi, legacy=args.legacy_voting)   # "yes" / "no" / "unparseable"
                         domain_opinions[domain] = domain_opinion
+                        log_vote(qid, num_try, domain, raw_domain_opi, domain_opinion, legacy=args.legacy_voting)
                         if domain_opinion == "no":
                             advice_prompt = get_consensus_opinion_prompt(domain, syn_report)
                             advice_output = handler.get_output_multiagent(user_input=advice_prompt, temperature=0, max_tokens=500, system_role=voter)
                             revision_advice[domain] = advice_output
                             hasno_flag = True
+                        # "unparseable" falls through: not agreement, not a revision
+                        # trigger, but it IS logged above.
                     if hasno_flag:
+                        note_revision_round()
                         revision_prompt = get_revision_prompt(syn_report, revision_advice)
                         revised_analysis = handler.get_output_multiagent(user_input=revision_prompt, temperature=0, max_tokens=2500, system_role="")
                         syn_report = cleansing_syn_report(question, options, revised_analysis)

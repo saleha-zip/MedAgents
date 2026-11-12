@@ -182,14 +182,33 @@ def cleansing_final_output(output):
     
     return ans, output
 
-def cleansing_voting(output):
-    output = output.lower()
-    ans = re.findall(r'yes|no', output)
+def cleansing_voting(output, legacy=False):
+    """Return 'yes', 'no', or 'unparseable'. Never guess.
+
+    An API failure (api_utils returns the literal 'ERROR.') and empty/prose
+    output that contains no standalone yes/no token are reported as
+    'unparseable' -- an abstention, NOT agreement.
+
+    legacy=True restores the original behaviour exactly: substring match with
+    no word boundaries, and unparseable output defaults to 'yes'. This exists
+    only so the same items can be re-run under the old parser for comparison.
+    """
+    if legacy:
+        out = "" if output is None else output.lower()
+        ans = re.findall(r'yes|no', out)
+        if len(ans) == 0:
+            return "yes"
+        return ans[0]
+
+    if output is None:
+        return "unparseable"
+    text = output.strip().lower()
+    if text == "" or text.startswith("error."):
+        return "unparseable"                       # API failure is NOT a vote
+    ans = re.findall(r'\byes\b|\bno\b', text)       # word boundaries
     if len(ans) == 0:
-        ans = "yes"
-    else:
-        ans = ans[0]
-    return ans
+        return "unparseable"
+    return ans[0]
 
 
 def transform_dict2text(analyses, type, content):
