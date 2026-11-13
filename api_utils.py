@@ -50,6 +50,65 @@ if not _api_key:
 
 client = OpenAI(api_key=_api_key, base_url=BASE_URL)
 
+
+# --------------------------------------------------------------------------- #
+# Provider-specific parameter handling
+#
+# All backbones are reached through the OpenAI-compatible SDK, but providers
+# disagree on which sampling parameters they accept. We detect the provider
+# from BASE_URL and build the request kwargs accordingly. Verified 2026-11-13
+# against each live endpoint:
+#   - OpenAI reasoning models (e.g. gpt-6-luna): require `max_completion_tokens`
+#     (not `max_tokens`) and REJECT `temperature` != 1 -> we omit temperature,
+#     so OpenAI runs are NOT at temperature 0 (a hard provider constraint).
+#   - Gemini OpenAI-compat endpoint: REJECTS `frequency_penalty`/`presence_penalty`
+#     and rejects `stop: null`.
+#   - Groq / DeepSeek / generic: standard OpenAI params (unchanged behaviour).
+# `stop=None` is always omitted (it serializes to JSON null, which Gemini rejects
+# and which is a no-op everywhere else).
+# --------------------------------------------------------------------------- #
+def _provider_from_base_url(url):
+    u = (url or "").lower()
+    if "api.openai.com" in u:
+        return "openai"
+    if "generativelanguage.googleapis.com" in u:
+        return "gemini"
+    if "api.anthropic.com" in u:
+        return "anthropic"
+    if "deepseek.com" in u:
+        return "deepseek"
+    if "groq.com" in u:
+        return "groq"
+    return "generic"
+
+
+PROVIDER = _provider_from_base_url(BASE_URL)
+
+
+def _build_chat_kwargs(engine, temperature, max_tokens, frequency_penalty, presence_penalty, stop, messages):
+    kwargs = {"model": engine, "messages": messages, "top_p": 1, "timeout": REQUEST_TIMEOUT}
+
+    # Token budget parameter name differs for OpenAI reasoning models.
+    if PROVIDER == "openai":
+        kwargs["max_completion_tokens"] = max_tokens
+    else:
+        kwargs["max_tokens"] = max_tokens
+
+    # Temperature: OpenAI reasoning models only accept the default (1); omit it.
+    if PROVIDER != "openai":
+        kwargs["temperature"] = temperature
+
+    # Penalties: Gemini's OpenAI-compat endpoint does not accept these.
+    if PROVIDER != "gemini":
+        kwargs["frequency_penalty"] = frequency_penalty
+        kwargs["presence_penalty"] = presence_penalty
+
+    # stop=None -> JSON null, which Gemini rejects; include only when set.
+    if stop is not None:
+        kwargs["stop"] = stop
+
+    return kwargs
+
 # --------------------------------------------------------------------------- #
 # Rate-limit classification
 #
@@ -151,15 +210,7 @@ def generate_response_multiagent(
         {"role": "user", "content": user_input},
     ]
     response = client.chat.completions.create(
-        model=engine,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        top_p=1,
-        frequency_penalty=frequency_penalty,
-        presence_penalty=presence_penalty,
-        stop=stop,
-        messages=messages,
-        timeout=REQUEST_TIMEOUT,
+        **_build_chat_kwargs(engine, temperature, max_tokens, frequency_penalty, presence_penalty, stop, messages)
     )
     latency = time.time() - start_time
     pt, ct, tt = _extract_usage(response)
@@ -175,15 +226,7 @@ def generate_response(
     print("Generating response for model: ", engine)
     start_time = time.time()
     response = client.chat.completions.create(
-        model=engine,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        top_p=1,
-        frequency_penalty=frequency_penalty,
-        presence_penalty=presence_penalty,
-        stop=stop,
-        messages=[{"role": "user", "content": input_text}],
-        timeout=REQUEST_TIMEOUT,
+        **_build_chat_kwargs(engine, temperature, max_tokens, frequency_penalty, presence_penalty, stop, [{"role": "user", "content": input_text}])
     )
     latency = time.time() - start_time
     pt, ct, tt = _extract_usage(response)
